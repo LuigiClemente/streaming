@@ -8,8 +8,9 @@ import (
 	"log"
 	"net"
 
-	"../frames"
 	"howett.net/plist"
+
+	"go-usbmuxd/frames"
 )
 
 type (

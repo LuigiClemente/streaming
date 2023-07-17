@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"./USB"
-	"./frames"
-	"./transmission"
+	"go-usbmuxd/USB"
+	"go-usbmuxd/frames"
+	"go-usbmuxd/transmission"
 )
 
 // some global vars
