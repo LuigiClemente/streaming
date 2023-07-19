@@ -54,6 +54,8 @@ func (device ConnectedDevices) SendData(data []byte, messageTagType uint32) {
 			log.Println(err.Error())
 		}
 	}
+
+	log.Printf("SENT DATA %v", string(data))
 }
 
 func byteSwap(val int) int {

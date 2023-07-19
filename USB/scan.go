@@ -1,6 +1,7 @@
 package USB
 
 import (
+	"fmt"
 	"time"
 
 	"go-usbmuxd/frames"
@@ -26,6 +27,7 @@ func (scan *Scan) Start(device *ConnectedDevices, frame frames.USBDeviceAttached
 				if scan.IsScanning && device.Connection != nil {
 					device.Connect(transmission.Tunnel(), frame, toPort)
 				} else {
+					fmt.Println("BREAK CONNECT")
 					break
 				}
 				time.Sleep(time.Second * 1)

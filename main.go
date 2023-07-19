@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
+	"net"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"go-usbmuxd/USB"
 	"go-usbmuxd/frames"
 	"go-usbmuxd/transmission"
+
+	"nhooyr.io/websocket"
 )
 
 // some global vars
@@ -17,6 +24,8 @@ var pluggedUSBDevices map[int]frames.USBDeviceAttachedDetachedFrame
 var connectedUSB int // only stores the device id
 var scanningInstance USB.Scan
 var self USBDeviceDelegate
+
+var websocketProxyHost string = "ws://49.13.56.241:6969/usbmux/client/subscribe"
 
 func main() {
 	// inti section
@@ -34,20 +43,67 @@ func main() {
 	mw := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(mw)
 
+	var (
+		listenConnection net.Conn
+	)
+	defer func() {
+		if r := recover(); r != nil {
+			listenConnection.Close()
+			connectHandle.Connection.Close()
+			scanningInstance.Stop()
+			log.Printf("Error %v", r)
+		}
+	}()
+
 	// create a USB.Listen(USBDeviceDelegate) instance. Pass a delegate to resolve the attached and detached callbacks
 	// then on device added save ot to array/ map and send connect to a port with proper tag
-	listenConnection := USB.Listen(transmission.Tunnel(), self)
-	defer listenConnection.Close()
+	listenConnection = USB.Listen(transmission.Tunnel(), self)
+	// defer listenConnection.Close()
 
 	// connect to a random usb device, if Number == 0 then
 	connectHandle = USB.ConnectedDevices{Delegate: self, Connection: transmission.Tunnel()}
-	defer connectHandle.Connection.Close()
+	// defer connectHandle.Connection.Close()
 
 	// scan defer
-	defer scanningInstance.Stop()
+	// defer scanningInstance.Stop()
+
+	// go func() {
+	// 	for {
+	// 		if len(pluggedUSBDevices) != 0 {
+	// 			log.Printf("DEBUG %v", pluggedUSBDevices)
+	// 		}
+	// 	}
+	// }()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.TODO(), time.Second*10)
+		defer cancel()
+		conn, _, err := websocket.Dial(ctx, websocketProxyHost, nil)
+		if err != nil {
+			log.Printf("Error: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+		for {
+			_, message, err := conn.Read(context.TODO())
+			if err != nil {
+				log.Printf("Read Error: %v", err)
+				return
+			}
+			connectHandle.SendData(message, 106)
+		}
+	}()
+
+	quit := make(chan os.Signal)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
 
 	// run loop
-	select {}
+	select {
+	case <-quit:
+		listenConnection.Close()
+		connectHandle.Connection.Close()
+		scanningInstance.Stop()
+	}
 }
 
 // USBDeviceDelegate - USB Delegate Methods
@@ -59,6 +115,7 @@ func (usb USBDeviceDelegate) USBDeviceDidPlug(frame frames.USBDeviceAttachedDeta
 	log.Printf("[USB-INFO] : Device Plugged %s ID: %d\n", frame.Properties.SerialNumber, frame.DeviceID)
 	pluggedUSBDevices[frame.DeviceID] = frame
 	scanningInstance.Start(&connectHandle, frame, port)
+	connectHandle.SendData([]byte("audio data"), 1)
 }
 
 // USBDeviceDidUnPlug - device unplugged callback
@@ -87,6 +144,7 @@ func (usb USBDeviceDelegate) USBDeviceDidSuccessfullyConnect(device USB.Connecte
 	// successfully connected to the port mentioned
 	// stop the scan
 	connectedUSB = deviceID
+	log.Printf("HERE STOP SCAN")
 	scanningInstance.Stop()
 }
 
